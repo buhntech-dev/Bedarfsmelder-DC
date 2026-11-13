@@ -53,6 +53,9 @@ async function playAlarmSequenceInChannel(client, { guildId, channelId, announce
     throw new Error("Dem Bot fehlen im Sprachkanal " + channelId + " die Rechte 'Kanal ansehen', 'Verbinden' oder 'Sprechen'.");
   }
 
+  console.log("[VOICE CHECK] Kanal=" + channel.name + " (" + channel.id + "), Guild=" + guild.id
+    + ", Connect=" + Boolean(permissions?.has("Connect")) + ", Speak=" + Boolean(permissions?.has("Speak"))
+    + ", ViewChannel=" + Boolean(permissions?.has("ViewChannel")));
   const connection = joinVoiceChannel({
     channelId: channel.id, guildId: guild.id,
     adapterCreator: guild.voiceAdapterCreator,
@@ -60,10 +63,15 @@ async function playAlarmSequenceInChannel(client, { guildId, channelId, announce
   });
   const player = createAudioPlayer();
   connection.subscribe(player);
+  connection.on("stateChange", (oldState, newState) => {
+    console.log("[VOICE STATE] " + channelId + ": " + oldState.status + " -> " + newState.status);
+  });
+  connection.on("debug", message => console.log("[VOICE DEBUG] " + channelId + ": " + message));
+  connection.on("error", error => console.error("[VOICE CONNECTION ERROR] " + channelId, error));
   let speechFile;
   try {
     console.log("[VOICE] Verbinde mit " + channelId + " …");
-    await entersState(connection, VoiceConnectionStatus.Ready, 60000);
+    await entersState(connection, VoiceConnectionStatus.Ready, 30000);
     console.log("[VOICE] Verbunden mit " + channelId);
     const alarmPath = audioUrl ? null : (fs.existsSync(localAlarm) ? localAlarm : null);
     if (audioUrl) {
