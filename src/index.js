@@ -107,9 +107,11 @@ function clean(value, max = 500) {
   return String(value || "").trim().replace(/[\u0000-\u001f]/g, " ").slice(0, max);
 }
 function makeAnnouncement(body) {
+  // Voralarm: ausschließlich zweimal "Voralarm" ausgeben.
+  if (body.voralarm) return "Voralarm. Voralarm.";
   const parts = [
-    body.voralarm ? "ACHTUNG. VORALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst." : "ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
-    body.voralarm ? "Dies ist ein Voralarm. Bitte Einsatzbereitschaft herstellen und auf die weitere Alarmierung warten." : body.probealarm ? "Dies ist ein Probealarm." : "Es liegt ein neuer Einsatz vor.",
+    "ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
+    body.probealarm ? "Dies ist ein Probealarm." : "Es liegt ein neuer Einsatz vor.",
     body.stichwort ? "Stichwort: " + clean(body.stichwort, 120) : "",
     body.plz ? "Postleitzahl: " + clean(body.plz, 12) : "",
     body.adresse ? "Einsatzort: " + clean(body.adresse, 180) : "",
