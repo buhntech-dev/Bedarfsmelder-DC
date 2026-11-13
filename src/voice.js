@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { Readable } = require("node:stream");
+const googleTTS = require("google-tts-api");
 const {
   joinVoiceChannel, createAudioPlayer, createAudioResource,
   AudioPlayerStatus, VoiceConnectionStatus, entersState, StreamType
@@ -70,7 +71,17 @@ async function playAlarmSequenceInChannel(client, { guildId, channelId, audioUrl
     } else {
       throw new Error("Die Audiodatei fehlt. Bitte assets/alarm.mp3 in das GitHub-Repository hochladen oder ALARM_AUDIO_URL setzen.");
     }
-    console.log("[VOICE] Nur die Alarmton-Datei in " + channelId + " vollständig abgespielt.");
+    console.log("[VOICE] Alarmton vollständig abgespielt. Starte deutsche KI-Sprachdurchsage …");
+    if (announcement && String(announcement).trim()) {
+      const chunks = googleTTS.getAllAudioUrls(String(announcement).slice(0, 1800), {
+        lang: "de", slow: false, host: "https://translate.google.com"
+      });
+      for (const chunk of chunks) {
+        const speechBuffer = await getAudioBuffer(chunk.url);
+        await playResource(player, createAudioResource(Readable.from(speechBuffer), { inputType: StreamType.Arbitrary }));
+      }
+      console.log("[VOICE] Deutsche Sprachdurchsage vollständig abgespielt.");
+    }
   } finally {
     player.stop(true);
     connection.destroy();
