@@ -95,7 +95,7 @@ async function broadcastWebAlarm(body, announcement, source) {
       const channel = await client.channels.fetch(channelId);
       if (channel?.name === "Auf Wache") sound = "theatergong";
     } catch {}
-    const payload = JSON.stringify({ announcement, source, sound, at: new Date().toISOString(), probealarm: !!body.probealarm });
+    const payload = JSON.stringify({ announcement, source, sound, at: new Date().toISOString(), probealarm: !!body.probealarm, voralarm: !!body.voralarm });
     for (const response of listeners) response.write("event: alarm\ndata: " + payload + "\n\n");
   }
 }
@@ -108,8 +108,8 @@ function clean(value, max = 500) {
 }
 function makeAnnouncement(body) {
   const parts = [
-    "NEUE ALARMIERUNG. ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
-    body.probealarm ? "Dies ist ein Probealarm." : "Es liegt ein neuer Einsatz vor.",
+    body.voralarm ? "ACHTUNG. VORALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst." : "NEUE ALARMIERUNG. ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
+    body.voralarm ? "Dies ist ein Voralarm. Bitte Einsatzbereitschaft herstellen und auf die weitere Alarmierung warten." : body.probealarm ? "Dies ist ein Probealarm." : "Es liegt ein neuer Einsatz vor.",
     body.stichwort ? "Stichwort: " + clean(body.stichwort, 120) : "",
     body.plz ? "Postleitzahl: " + clean(body.plz, 12) : "",
     body.adresse ? "Einsatzort: " + clean(body.adresse, 180) : "",
@@ -123,7 +123,7 @@ async function sendAnnouncementMessage(body, announcement, source) {
   try {
     const channel = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
     if (!channel?.isTextBased() || !channel.send) throw new Error("Der Meldekanal ist kein beschreibbarer Textkanal.");
-    const heading = body.probealarm ? "🧪 **PROBEALARM**" : "🚨 **NEUE ALARMIERUNG**";
+    const heading = body.voralarm ? "🟠 **VORALARM**" : body.probealarm ? "🧪 **PROBEALARM**" : "🚨 **NEUE ALARMIERUNG**";
     await channel.send({
       content: heading + "\n" + announcement,
       allowedMentions: { parse: [] }
@@ -140,7 +140,7 @@ async function queueAlarm(body, source = "Webhook") {
   const task = alarmQueue.catch(() => {}).then(async () => {
     alarmCount++;
     lastAlarmAt = new Date().toISOString();
-    alarmHistory.unshift({ id: alarmCount, at: lastAlarmAt, source, probealarm: !!body.probealarm, stichwort: clean(body.stichwort, 120), plz: clean(body.plz, 12), adresse: clean(body.adresse, 180), meldebild: clean(body.meldebild, 350), fahrzeuge: clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.join(", ") : body.fahrzeuge, 180), status: "wird alarmiert" });
+    alarmHistory.unshift({ id: alarmCount, at: lastAlarmAt, source, probealarm: !!body.probealarm, voralarm: !!body.voralarm, stichwort: clean(body.stichwort, 120), plz: clean(body.plz, 12), adresse: clean(body.adresse, 180), meldebild: clean(body.meldebild, 350), fahrzeuge: clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.join(", ") : body.fahrzeuge, 180), status: "wird alarmiert" });
     if (alarmHistory.length > 30) alarmHistory.length = 30;
     console.log("[ALARM] #" + alarmCount + " von " + source + ": " + announcement);
     await broadcastWebAlarm(body, announcement, source);
@@ -380,6 +380,14 @@ const commands = [
       .addStringOption(o => o.setName("funkrufname").setDescription("Funkrufname des Fahrzeugs").setRequired(true).setAutocomplete(true)))
     .toJSON(),
   new SlashCommandBuilder()
+    .setName("voralarm")
+    .setDescription("Löst einen Voralarm mit Ton und Sprachdurchsage aus.")
+    .addStringOption(o => o.setName("stichwort").setDescription("Anlass / Stichwort").setRequired(true).setMaxLength(120))
+    .addStringOption(o => o.setName("adresse").setDescription("Einsatzort oder Bereich").setRequired(false).setMaxLength(180))
+    .addStringOption(o => o.setName("plz").setDescription("Postleitzahl").setRequired(false).setMaxLength(12))
+    .addStringOption(o => o.setName("hinweis").setDescription("Zusätzliche Information").setRequired(false).setMaxLength(250))
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName("probealarm")
     .setDescription("Löst sofort einen gekennzeichneten Probealarm aus.")
     .toJSON(),
@@ -402,7 +410,7 @@ client.once("ready", async () => {
     if (!applicationId) throw new Error("Application-ID konnte nicht ermittelt werden.");
     const rest = new REST({ version: "10" }).setToken(TOKEN);
     await rest.put(Routes.applicationGuildCommands(applicationId, GUILD_ID), { body: commands });
-    console.log("[COMMANDS] /alarm, /probealarm, /probe, /auto und /sprachkanal erfolgreich auf Server " + GUILD_ID + " registriert.");
+    console.log("[COMMANDS] /alarm, /voralarm, /probealarm, /probe, /auto und /sprachkanal erfolgreich auf Server " + GUILD_ID + " registriert.");
   } catch (error) {
     console.error("[COMMAND REGISTRATION ERROR]", error);
   }
@@ -423,7 +431,7 @@ client.on("interactionCreate", async interaction => {
     return interaction.respond([]).catch(() => {});
   }
   if (!interaction.isChatInputCommand()) return;
-  if (!["alarm", "probealarm", "probe", "sprachkanal", "auto"].includes(interaction.commandName)) return;
+  if (!["alarm", "voralarm", "probealarm", "probe", "sprachkanal", "auto"].includes(interaction.commandName)) return;
   if (interaction.commandName === "auto") {
     let hasAutoAdminRole = interaction.member?.roles?.cache?.has(AUTO_ADMIN_ROLE_ID);
     if (!hasAutoAdminRole) {
@@ -479,6 +487,16 @@ client.on("interactionCreate", async interaction => {
           .map(v => ({ funkrufname: v.funkrufname, name: v.name }))
       }, "Discord /alarm");
       return interaction.editReply("✅ Alarm wurde verarbeitet: Sprachkanäle und Meldekanal.");
+    }
+    if (interaction.commandName === "voralarm") {
+      await queueAlarm({
+        voralarm: true,
+        stichwort: interaction.options.getString("stichwort"),
+        adresse: interaction.options.getString("adresse"),
+        plz: interaction.options.getString("plz"),
+        hinweis: interaction.options.getString("hinweis")
+      }, "Discord /voralarm");
+      return interaction.editReply("🟠 Voralarm wurde ausgelöst.");
     }
     if (interaction.commandName === "probealarm") {
       await queueAlarm({
