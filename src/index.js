@@ -3,7 +3,7 @@ const express = require("express");
 const path = require("node:path");
 const {
   Client, GatewayIntentBits, SlashCommandBuilder, SlashCommandSubcommandBuilder,
-  REST, Routes, PermissionFlagsBits
+  REST, Routes, PermissionFlagsBits, ChannelType
 } = require("discord.js");
 
 const app = express();
@@ -268,7 +268,7 @@ client.once("ready", async () => {
 
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  if (!["alarm", "probealarm", "probe"].includes(interaction.commandName)) return;
+  if (!["alarm", "probealarm", "probe", "sprachkanal"].includes(interaction.commandName)) return;
   await interaction.deferReply({ ephemeral: true });
   try {
     if (interaction.commandName === "alarm") {
