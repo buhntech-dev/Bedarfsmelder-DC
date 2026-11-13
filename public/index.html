@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bedarfsmelder DC</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,Arial;background:#090e18;color:#eef3fb}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 0,#172b45 0,transparent 36%),#090e18;min-height:100vh}
+main{max-width:980px;margin:auto;padding:38px 20px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px}
+.brand{display:flex;gap:13px;align-items:center}.logo{width:48px;height:48px;border-radius:15px;background:#d83b36;display:grid;place-items:center;font-size:24px;font-weight:900}
+h1{font-size:25px;margin:0}.sub{color:#94a5bb;font-size:13px;margin-top:4px}
+.status{border:1px solid #26364b;background:#111b2a;border-radius:99px;padding:9px 13px;color:#b9c8d9;font-size:13px}
+.panel{margin-top:28px;background:#101a29;border:1px solid #26364b;border-radius:22px;padding:24px;box-shadow:0 18px 60px #0005}
+h2{font-size:18px;margin:0 0 20px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+label{display:block;color:#9eb0c6;font-size:12px;margin-bottom:7px}input,textarea{width:100%;background:#0a1220;border:1px solid #2b3b51;border-radius:11px;padding:12px;color:white;font:inherit;outline:none}
+textarea{min-height:90px;resize:vertical}.wide{grid-column:1/-1}button{margin-top:18px;border:0;border-radius:12px;background:#d83b36;color:white;padding:13px 19px;font-weight:750;cursor:pointer}button:disabled{opacity:.5}
+.note{color:#8ea0b6;font-size:12px;line-height:1.6;margin-top:14px}.result{margin-top:14px;font-size:13px;color:#a9e6bd;white-space:pre-wrap}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}.stat{background:#0a1220;border:1px solid #26364b;border-radius:14px;padding:15px}.stat b{display:block;font-size:22px}.stat span{color:#8fa2b9;font-size:12px}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.top{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:1fr}}
+</style></head>
+<body><main>
+<div class="top"><div class="brand"><div class="logo">DC</div><div><h1>Bedarfsmelder</h1><div class="sub">DISCORD ALARMIERUNG · LEITSTELLE</div></div></div><div class="status" id="status">● Verbindung wird geprüft …</div></div>
+<section class="panel"><h2>Neue Alarmierung</h2>
+<form id="alarm"><div class="grid">
+<div><label>STICHWORT *</label><input name="stichwort" required placeholder="z. B. B2 – Gebäudebrand"></div>
+<div><label>POSTLEITZAHL</label><input name="plz" placeholder="z. B. 79098"></div>
+<div class="wide"><label>EINSATZADRESSE *</label><input name="adresse" required placeholder="Straße, Hausnummer, Ort"></div>
+<div class="wide"><label>MELDEBILD</label><textarea name="meldebild" placeholder="Was ist passiert?"></textarea></div>
+<div class="wide"><label>ALAMIERTE FAHRZEUGE</label><input name="fahrzeuge" placeholder="z. B. ELW 1, HLF 20, DLK 23"></div>
+</div><button id="send">Alarm auslösen</button><div class="result" id="result"></div></form>
+<div class="stats"><div class="stat"><b id="bot">–</b><span>Discord-Bot</span></div><div class="stat"><b id="count">0</b><span>Alarmierungen</span></div><div class="stat"><b id="last">–</b><span>Letzter Alarm</span></div></div>
+<p class="note">Der Alarm wird nacheinander verarbeitet: zuerst die vollständige Tondatei, danach die deutsche Sprachdurchsage. Der Webhook-Endpunkt für die Leitstelle ist /api/alarm.</p>
+</section></main>
+<script>
+async function refresh(){try{const r=await fetch('/api/status');const d=await r.json();document.querySelector('#status').textContent=d.ready?'● Discord verbunden':'● Discord nicht verbunden';document.querySelector('#bot').textContent=d.ready?'ONLINE':'OFFLINE';document.querySelector('#count').textContent=d.alarmCount;document.querySelector('#last').textContent=d.lastAlarmAt?new Date(d.lastAlarmAt).toLocaleTimeString('de-DE'):'–'}catch{document.querySelector('#status').textContent='● Server nicht erreichbar'}}
+document.querySelector('#alarm').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget;const data=Object.fromEntries(new FormData(form));data.fahrzeuge=data.fahrzeuge.split(',').map(x=>x.trim()).filter(Boolean);document.querySelector('#send').disabled=true;document.querySelector('#result').textContent='Alarm wird verarbeitet …';try{const r=await fetch('/api/alarm',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+prompt('Alarm-Schlüssel eingeben:')},body:JSON.stringify(data)});const d=await r.json();document.querySelector('#result').textContent=d.ok?'Alarm wurde verarbeitet.':(d.error||'Fehler');}catch(err){document.querySelector('#result').textContent=err.message}finally{document.querySelector('#send').disabled=false;refresh()}});
+refresh();setInterval(refresh,10000);
+</script></body></html>
