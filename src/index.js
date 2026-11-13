@@ -34,6 +34,14 @@ const WEBHOOK_SECRET = process.env.ALARM_WEBHOOK_SECRET;
 const TIME_ZONE = process.env.TIME_ZONE || "Europe/Berlin";
 const COMMAND_ROLE_ID = "1565059308641853601";
 const SCHEDULE_MARKER = "[BEDARFSMELDER_PROBEPLAN_V1]";
+const WEB_VOICE_CATEGORY_NAME = "Website-Sprachkanäle";
+
+async function getWebVoiceCategory(guild, create = false) {
+  const channels = await guild.channels.fetch();
+  let category = channels.find(channel => channel && channel.type === ChannelType.GuildCategory && channel.name === WEB_VOICE_CATEGORY_NAME);
+  if (!category && create) category = await guild.channels.create({ name: WEB_VOICE_CATEGORY_NAME, type: ChannelType.GuildCategory });
+  return category || null;
+}
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
 let alarmQueue = Promise.resolve();
@@ -44,8 +52,13 @@ const webVoiceListeners = new Map();
 const liveVoicePeers = new Map();
 async function isWebVoiceChannel(channelId) {
   if (VOICE_CHANNEL_IDS.includes(channelId)) return true;
-  try { const channel = await client.channels.fetch(channelId); return !!channel?.isVoiceBased() && (channel.topic || "").startsWith("WEBVOICE_CHANNEL"); }
-  catch { return false; }
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel?.isVoiceBased()) return false;
+    const guild = await client.guilds.fetch(GUILD_ID);
+    const category = await getWebVoiceCategory(guild, false);
+    return !!category && channel.parentId === category.id;
+  } catch { return false; }
 }
 function sendVoiceEvent(channelId, event, payload, exceptPeer = null) {
   const peers = liveVoicePeers.get(channelId); if (!peers) return;
@@ -188,7 +201,7 @@ app.get("/api/channels", async (_req, res) => {
     const allChannels = await guild.channels.fetch();
     const channels = allChannels
       .filter(channel => channel && channel.isVoiceBased() &&
-        (VOICE_CHANNEL_IDS.includes(channel.id) || (channel.topic || "").startsWith("WEBVOICE_CHANNEL")))
+        (VOICE_CHANNEL_IDS.includes(channel.id) || (channel.parentId && allChannels.get(channel.parentId)?.name === WEB_VOICE_CATEGORY_NAME)))
       .map(channel => ({ id: channel.id, name: channel.name, type: "voice" }));
     res.json({ ok: true, channels });
   } catch (error) {
@@ -240,7 +253,8 @@ app.post("/api/channels", async (req, res) => {
     const name = clean(req.body?.name, 90);
     if (name.length < 2) return res.status(400).json({ ok: false, error: "Kanalname muss mindestens 2 Zeichen haben." });
     const guild = await client.guilds.fetch(GUILD_ID);
-    const channel = await guild.channels.create({ name, type: ChannelType.GuildVoice, topic: "WEBVOICE_CHANNEL" });
+    const category = await getWebVoiceCategory(guild, true);
+    const channel = await guild.channels.create({ name, type: ChannelType.GuildVoice, parent: category.id });
     res.status(201).json({ ok: true, channel: { id: channel.id, name: channel.name } });
   } catch (error) {
     console.error("[CHANNEL CREATE]", error);
@@ -339,8 +353,9 @@ client.on("interactionCreate", async interaction => {
     if (interaction.commandName === "sprachkanal") {
       const name = clean(interaction.options.getString("name"), 90);
       const guild = await client.guilds.fetch(GUILD_ID);
+      const category = await getWebVoiceCategory(guild, true);
       const channel = await guild.channels.create({
-        name, type: ChannelType.GuildVoice, topic: "WEBVOICE_CHANNEL"
+        name, type: ChannelType.GuildVoice, parent: category.id
       });
       return interaction.editReply("✅ Website-Sprachkanal **" + channel.name + "** wurde erstellt. Aktualisiere die Website – der Kanal erscheint dann in der Liste.");
     }
