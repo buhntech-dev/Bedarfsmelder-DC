@@ -3,7 +3,7 @@ const express = require("express");
 const path = require("node:path");
 const {
   Client, GatewayIntentBits, SlashCommandBuilder, SlashCommandSubcommandBuilder,
-  REST, Routes, PermissionFlagsBits, ChannelType
+  REST, Routes, ChannelType
 } = require("discord.js");
 
 const app = express();
@@ -32,6 +32,7 @@ const VOICE_CHANNEL_IDS = (process.env.VOICE_CHANNEL_IDS || process.env.VOICE_CH
 const ANNOUNCEMENT_CHANNEL_ID = process.env.ANNOUNCEMENT_CHANNEL_ID || "1559922761546203276";
 const WEBHOOK_SECRET = process.env.ALARM_WEBHOOK_SECRET;
 const TIME_ZONE = process.env.TIME_ZONE || "Europe/Berlin";
+const COMMAND_ROLE_ID = "1565059308641853601";
 const SCHEDULE_MARKER = "[BEDARFSMELDER_PROBEPLAN_V1]";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
@@ -264,7 +265,7 @@ app.listen(PORT, () => console.log("[WEB] Bedarfsmelder hört auf Port " + PORT)
 const probeCommand = new SlashCommandBuilder()
   .setName("probe")
   .setDescription("Wöchentlichen Probealarm verwalten.")
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+  
   .addSubcommand(sub => sub
     .setName("festlegen")
     .setDescription("Wöchentlichen Probealarm festlegen.")
@@ -288,16 +289,16 @@ const commands = [
     .addStringOption(o => o.setName("plz").setDescription("Postleitzahl").setRequired(false).setMaxLength(12))
     .addStringOption(o => o.setName("meldebild").setDescription("Was ist passiert?").setRequired(false).setMaxLength(350))
     .addStringOption(o => o.setName("fahrzeuge").setDescription("Alarmierte Fahrzeuge").setRequired(false).setMaxLength(180))
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).toJSON(),
+    .toJSON(),
   new SlashCommandBuilder()
     .setName("probealarm")
     .setDescription("Löst sofort einen gekennzeichneten Probealarm aus.")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).toJSON(),
+    .toJSON(),
   probeCommand,
   new SlashCommandBuilder()
     .setName("sprachkanal")
     .setDescription("Website-Sprachkanäle verwalten.")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    
     .addSubcommand(sub => sub
       .setName("erstellen")
       .setDescription("Einen neuen Website-Sprachkanal erstellen.")
@@ -323,6 +324,13 @@ client.once("ready", async () => {
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (!["alarm", "probealarm", "probe", "sprachkanal"].includes(interaction.commandName)) return;
+  const memberRoles = interaction.member?.roles?.cache;
+  if (!memberRoles?.has(COMMAND_ROLE_ID)) {
+    return interaction.reply({
+      content: "❌ Du benötigst die freigeschaltete Rolle, um diesen Befehl zu benutzen.",
+      ephemeral: true
+    });
+  }
   await interaction.deferReply({ ephemeral: true });
   try {
     if (interaction.commandName === "sprachkanal") {
