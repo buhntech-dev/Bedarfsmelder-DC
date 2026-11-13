@@ -12,7 +12,8 @@ const PORT = Number(process.env.PORT || 3000);
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const GUILD_ID = process.env.DISCORD_GUILD_ID;
-const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
+const VOICE_CHANNEL_IDS = (process.env.VOICE_CHANNEL_IDS || process.env.VOICE_CHANNEL_ID || "")
+  .split(",").map(id => id.trim()).filter(Boolean);
 const WEBHOOK_SECRET = process.env.ALARM_WEBHOOK_SECRET;
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
@@ -45,7 +46,7 @@ async function queueAlarm(body, source = "Webhook") {
     console.log("[ALARM] #" + alarmCount + " von " + source + ": " + announcement);
     await playAlarmSequence(client, {
       guildId: clean(body.guildId || GUILD_ID, 32),
-      channelId: clean(body.channelId || VOICE_CHANNEL_ID, 32),
+      channelIds: body.channelId ? [clean(body.channelId, 32)] : VOICE_CHANNEL_IDS,
       announcement,
       audioUrl: clean(body.audioUrl || process.env.ALARM_AUDIO_URL, 1500)
     });
@@ -59,7 +60,7 @@ app.get("/health", (_req, res) => res.json({
 }));
 app.get("/api/status", (_req, res) => res.json({
   ready: client.isReady(), bot: client.user?.tag || null,
-  voiceChannelConfigured: Boolean(VOICE_CHANNEL_ID), alarmCount, lastAlarmAt
+  voiceChannelConfigured: VOICE_CHANNEL_IDS.length > 0, voiceChannelsConfigured: VOICE_CHANNEL_IDS.length, alarmCount, lastAlarmAt
 }));
 app.post("/api/alarm", async (req, res) => {
   if (!WEBHOOK_SECRET || req.get("authorization") !== "Bearer " + WEBHOOK_SECRET) {
