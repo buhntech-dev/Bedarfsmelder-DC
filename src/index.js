@@ -107,7 +107,7 @@ function clean(value, max = 500) {
 }
 function makeAnnouncement(body) {
   const parts = [
-    "ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
+    "NEUE ALARMIERUNG. ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
     body.probealarm ? "Dies ist ein Probealarm." : "Es liegt ein neuer Einsatz vor.",
     body.stichwort ? "Stichwort: " + clean(body.stichwort, 120) : "",
     body.plz ? "Postleitzahl: " + clean(body.plz, 12) : "",
