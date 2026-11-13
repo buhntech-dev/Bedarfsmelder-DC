@@ -1,12 +1,10 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const os = require("node:os");
 const { Readable } = require("node:stream");
 const {
   joinVoiceChannel, createAudioPlayer, createAudioResource,
   AudioPlayerStatus, VoiceConnectionStatus, entersState, StreamType
 } = require("@discordjs/voice");
-const googleTTS = require("google-tts-api");
 
 const ffmpegPath = require("ffmpeg-static");
 if (ffmpegPath) process.env.FFMPEG_PATH = ffmpegPath;
@@ -16,14 +14,6 @@ async function getAudioBuffer(url) {
   const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw new Error("Audiodatei konnte nicht geladen werden: HTTP " + response.status);
   return Buffer.from(await response.arrayBuffer());
-}
-async function createSpeechFile(text) {
-  const chunks = googleTTS.getAllAudioUrls(text, { lang: "de", slow: false, host: "https://translate.google.com" });
-  const buffers = [];
-  for (const chunk of chunks) buffers.push(await getAudioBuffer(chunk.url));
-  const file = path.join(os.tmpdir(), "bedarfsmelder-tts-" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".mp3");
-  fs.writeFileSync(file, Buffer.concat(buffers));
-  return file;
 }
 function waitForPlayback(player) {
   return new Promise((resolve, reject) => {
@@ -42,7 +32,7 @@ async function playResource(player, resource) {
   player.play(resource);
   await done;
 }
-async function playAlarmSequenceInChannel(client, { guildId, channelId, announcement, audioUrl }) {
+async function playAlarmSequenceInChannel(client, { guildId, channelId, audioUrl }) {
   if (!guildId || !channelId) throw new Error("DISCORD_GUILD_ID oder Sprachkanal-ID fehlt.");
   const guild = await client.guilds.fetch(guildId);
   const channel = await guild.channels.fetch(channelId);
@@ -68,7 +58,6 @@ async function playAlarmSequenceInChannel(client, { guildId, channelId, announce
   });
   connection.on("debug", message => console.log("[VOICE DEBUG] " + channelId + ": " + message));
   connection.on("error", error => console.error("[VOICE CONNECTION ERROR] " + channelId, error));
-  let speechFile;
   try {
     console.log("[VOICE] Verbinde mit " + channelId + " …");
     await entersState(connection, VoiceConnectionStatus.Ready, 30000);
@@ -79,15 +68,12 @@ async function playAlarmSequenceInChannel(client, { guildId, channelId, announce
     } else if (alarmPath) {
       await playResource(player, createAudioResource(alarmPath, { inputType: StreamType.Arbitrary }));
     } else {
-      console.warn("[VOICE] Keine assets/alarm.mp3 vorhanden; Sprachdurchsage ohne Alarmton.");
+      throw new Error("Die Audiodatei fehlt. Bitte assets/alarm.mp3 in das GitHub-Repository hochladen oder ALARM_AUDIO_URL setzen.");
     }
-    speechFile = await createSpeechFile(announcement);
-    await playResource(player, createAudioResource(speechFile, { inputType: StreamType.Arbitrary }));
-    console.log("[VOICE] Meldung in " + channelId + " vollständig abgespielt.");
+    console.log("[VOICE] Nur die Alarmton-Datei in " + channelId + " vollständig abgespielt.");
   } finally {
     player.stop(true);
     connection.destroy();
-    if (speechFile) { try { fs.unlinkSync(speechFile); } catch {} }
   }
 }
 
