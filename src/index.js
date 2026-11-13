@@ -110,7 +110,7 @@ function makeAnnouncement(body) {
   // Voralarm: ausschließlich zweimal "Voralarm" ausgeben.
   if (body.voralarm) return "Voralarm. Voralarm.";
   const parts = [
-    "ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
+    "Einsatz für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
     body.probealarm ? "Dies ist ein Probealarm." : "",
     body.stichwort ? "Stichwort: " + clean(body.stichwort, 120) : "",
     body.plz ? "Postleitzahl: " + clean(body.plz, 12) : "",
