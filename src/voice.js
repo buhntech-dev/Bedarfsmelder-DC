@@ -54,7 +54,7 @@ async function playUrl(player, url) {
   await done;
 }
 
-async function playAlarmSequence(client, { guildId, channelId, announcement, audioUrl }) {
+async function playAlarmSequenceInChannel(client, { guildId, channelId, announcement, audioUrl }) {
   if (!guildId || !channelId) throw new Error("DISCORD_GUILD_ID oder VOICE_CHANNEL_ID fehlt.");
   const guild = await client.guilds.fetch(guildId);
   const channel = await guild.channels.fetch(channelId);
@@ -89,6 +89,19 @@ async function playAlarmSequence(client, { guildId, channelId, announcement, aud
   } finally {
     player.stop(true);
     connection.destroy();
+  }
+}
+async function playAlarmSequence(client, options) {
+  const channelIds = [...new Set((options.channelIds || [options.channelId]).filter(Boolean))];
+  if (!channelIds.length) throw new Error("Keine Sprachkanäle konfiguriert.");
+  const results = await Promise.allSettled(channelIds.map(channelId =>
+    playAlarmSequenceInChannel(client, { ...options, channelId })
+  ));
+  const failed = results.map((result, index) => ({ result, channelId: channelIds[index] }))
+    .filter(item => item.result.status === "rejected");
+  if (failed.length) {
+    const details = failed.map(item => item.channelId + ": " + item.result.reason.message).join("; ");
+    throw new Error("Nicht alle Sprachkanäle konnten die Meldung abspielen: " + details);
   }
 }
 module.exports = { playAlarmSequence };
