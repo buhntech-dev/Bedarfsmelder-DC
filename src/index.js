@@ -402,7 +402,7 @@ client.once("ready", async () => {
     if (!applicationId) throw new Error("Application-ID konnte nicht ermittelt werden.");
     const rest = new REST({ version: "10" }).setToken(TOKEN);
     await rest.put(Routes.applicationGuildCommands(applicationId, GUILD_ID), { body: commands });
-    console.log("[COMMANDS] /alarm, /probealarm und /probe erfolgreich auf Server " + GUILD_ID + " registriert.");
+    console.log("[COMMANDS] /alarm, /probealarm, /probe, /auto und /sprachkanal erfolgreich auf Server " + GUILD_ID + " registriert.");
   } catch (error) {
     console.error("[COMMAND REGISTRATION ERROR]", error);
   }
