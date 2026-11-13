@@ -93,13 +93,19 @@ const commands = [
 
 client.once("ready", async () => {
   console.log("[DISCORD] Eingeloggt als " + client.user.tag);
-  if (TOKEN && CLIENT_ID) {
-    try {
-      const rest = new REST({ version: "10" }).setToken(TOKEN);
-      if (GUILD_ID) await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-      else await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-      console.log("[DISCORD] /alarm registriert.");
-    } catch (error) { console.error("[COMMAND REGISTRATION]", error); }
+  try {
+    const applicationId = client.application?.id || CLIENT_ID;
+    if (!applicationId) throw new Error("Application-ID konnte nicht ermittelt werden.");
+    const rest = new REST({ version: "10" }).setToken(TOKEN);
+    if (GUILD_ID) {
+      await rest.put(Routes.applicationGuildCommands(applicationId, GUILD_ID), { body: commands });
+      console.log("[COMMANDS] /alarm erfolgreich auf Server " + GUILD_ID + " registriert.");
+    } else {
+      await rest.put(Routes.applicationCommands(applicationId), { body: commands });
+      console.log("[COMMANDS] /alarm global registriert. Die Anzeige kann bis zu 1 Stunde dauern.");
+    }
+  } catch (error) {
+    console.error("[COMMAND REGISTRATION ERROR]", error);
   }
 });
 
