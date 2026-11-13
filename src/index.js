@@ -45,7 +45,7 @@ function broadcastWebAlarm(body, announcement, source) {
   const payload = JSON.stringify({ announcement, source, at: new Date().toISOString(), probealarm: !!body.probealarm });
   for (const [channelId, listeners] of webVoiceListeners) {
     if (body.channelId && body.channelId !== channelId) continue;
-    for (const response of listeners) response.write("event: alarm\\ndata: " + payload + "\\n\\n");
+    for (const response of listeners) response.write("event: alarm\ndata: " + payload + "\n\n");
   }
 }
 let scheduleMessage = null;
@@ -199,11 +199,11 @@ app.get("/api/stream/:channelId", (req, res) => {
   const channelId = clean(req.params.channelId, 32);
   if (!VOICE_CHANNEL_IDS.includes(channelId)) return res.status(404).json({ ok: false, error: "Unbekannter Sprachkanal." });
   res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "Access-Control-Allow-Origin": allowedOrigins[0] || "*" });
-  res.write("retry: 3000\\n\\n");
+  res.write("retry: 3000\n\n");
   if (!webVoiceListeners.has(channelId)) webVoiceListeners.set(channelId, new Set());
   webVoiceListeners.get(channelId).add(res);
   console.log("[WEB VOICE] Client im Website-Sprachkanal " + channelId + " verbunden.");
-  const keepAlive = setInterval(() => res.write(": keep-alive\\n\\n"), 20000);
+  const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), 20000);
   req.on("close", () => {
     clearInterval(keepAlive);
     webVoiceListeners.get(channelId)?.delete(res);
