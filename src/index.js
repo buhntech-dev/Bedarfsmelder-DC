@@ -58,14 +58,14 @@ function makeAnnouncement(body) {
   const parts = [
     "Alarmierung der Feuerwehr und des Rettungsdienstes.",
     body.probealarm ? "Dies ist ein Probealarm." : "Es liegt ein neuer Einsatz vor.",
-    body.stichwort ? "Stichwort: " + clean(body.stichwort, 120) + "." : "",
-    body.plz ? "Postleitzahl: " + clean(body.plz, 12) + "." : "",
-    body.adresse ? "Einsatzort: " + clean(body.adresse, 180) + "." : "",
-    body.meldebild ? "Meldebild: " + clean(body.meldebild, 350) + "." : "",
-    body.fahrzeuge ? "Alarmierte Kräfte: " + clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.join(", ") : body.fahrzeuge, 180) + "." : "",
-    body.hinweis ? "Zusatzinformation: " + clean(body.hinweis, 250) + "." : ""
+    body.stichwort ? "Stichwort: " + clean(body.stichwort, 120) : "",
+    body.plz ? "Postleitzahl: " + clean(body.plz, 12) : "",
+    body.adresse ? "Einsatzort: " + clean(body.adresse, 180) : "",
+    body.meldebild ? "Meldebild: " + clean(body.meldebild, 350) : "",
+    body.fahrzeuge ? "Alarmierte Kräfte: " + clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.join(", ") : body.fahrzeuge, 180) : "",
+    body.hinweis ? "Zusatzinformation: " + clean(body.hinweis, 250) : ""
   ].filter(Boolean);
-  return parts.join(" ");
+  return parts.join("\n");
 }
 async function sendAnnouncementMessage(body, announcement, source) {
   try {
@@ -73,7 +73,7 @@ async function sendAnnouncementMessage(body, announcement, source) {
     if (!channel?.isTextBased() || !channel.send) throw new Error("Der Meldekanal ist kein beschreibbarer Textkanal.");
     const heading = body.probealarm ? "🧪 **PROBEALARM**" : "🚨 **NEUE ALARMIERUNG**";
     await channel.send({
-      content: heading + "\n" + announcement + "\n\nQuelle: " + clean(source, 80),
+      content: heading + "\n" + announcement,
       allowedMentions: { parse: [] }
     });
     console.log("[ANNOUNCEMENT] Nachricht in Kanal " + ANNOUNCEMENT_CHANNEL_ID + " gesendet.");
@@ -185,9 +185,18 @@ app.get("/api/channels", async (_req, res) => {
   }
 });
 app.get("/api/alarms", (_req, res) => res.json({ ok: true, alarms: alarmHistory }));
-app.get("/api/stream/:channelId", (req, res) => {
+app.get("/api/stream/:channelId", async (req, res) => {
   const channelId = clean(req.params.channelId, 32);
-  if (!VOICE_CHANNEL_IDS.includes(channelId)) return res.status(404).json({ ok: false, error: "Unbekannter Sprachkanal." });
+  if (!VOICE_CHANNEL_IDS.includes(channelId)) {
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel?.isVoiceBased() || !(channel.topic || "").startsWith("WEBVOICE_CHANNEL")) {
+        return res.status(404).json({ ok: false, error: "Unbekannter Sprachkanal." });
+      }
+    } catch {
+      return res.status(404).json({ ok: false, error: "Unbekannter Sprachkanal." });
+    }
+  }
   res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "Access-Control-Allow-Origin": allowedOrigins[0] || "*" });
   res.write("retry: 3000\n\n");
   if (!webVoiceListeners.has(channelId)) webVoiceListeners.set(channelId, new Set());
