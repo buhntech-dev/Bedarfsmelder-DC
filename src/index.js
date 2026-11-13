@@ -40,6 +40,17 @@ let lastAlarmAt = null;
 let alarmCount = 0;
 const alarmHistory = [];
 const webVoiceListeners = new Map();
+const liveVoicePeers = new Map();
+async function isWebVoiceChannel(channelId) {
+  if (VOICE_CHANNEL_IDS.includes(channelId)) return true;
+  try { const channel = await client.channels.fetch(channelId); return !!channel?.isVoiceBased() && (channel.topic || "").startsWith("WEBVOICE_CHANNEL"); }
+  catch { return false; }
+}
+function sendVoiceEvent(channelId, event, payload, exceptPeer = null) {
+  const peers = liveVoicePeers.get(channelId); if (!peers) return;
+  const data = "event: " + event + "\\ndata: " + JSON.stringify(payload) + "\\n\\n";
+  for (const [peerId, response] of peers) if (peerId !== exceptPeer) response.write(data);
+}
 function broadcastWebAlarm(body, announcement, source) {
   const payload = JSON.stringify({ announcement, source, at: new Date().toISOString(), probealarm: !!body.probealarm });
   for (const [channelId, listeners] of webVoiceListeners) {
@@ -187,28 +198,53 @@ app.get("/api/channels", async (_req, res) => {
 app.get("/api/alarms", (_req, res) => res.json({ ok: true, alarms: alarmHistory }));
 app.get("/api/stream/:channelId", async (req, res) => {
   const channelId = clean(req.params.channelId, 32);
-  if (!VOICE_CHANNEL_IDS.includes(channelId)) {
-    try {
-      const channel = await client.channels.fetch(channelId);
-      if (!channel?.isVoiceBased() || !(channel.topic || "").startsWith("WEBVOICE_CHANNEL")) {
-        return res.status(404).json({ ok: false, error: "Unbekannter Sprachkanal." });
-      }
-    } catch {
-      return res.status(404).json({ ok: false, error: "Unbekannter Sprachkanal." });
-    }
-  }
+  const peerId = clean(req.query.peerId, 80);
+  if (!await isWebVoiceChannel(channelId)) return res.status(404).json({ ok: false, error: "Unbekannter Sprachkanal." });
   res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "Access-Control-Allow-Origin": allowedOrigins[0] || "*" });
-  res.write("retry: 3000\n\n");
+  res.write("retry: 3000\\n\\n");
   if (!webVoiceListeners.has(channelId)) webVoiceListeners.set(channelId, new Set());
   webVoiceListeners.get(channelId).add(res);
-  console.log("[WEB VOICE] Client im Website-Sprachkanal " + channelId + " verbunden.");
-  const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), 20000);
+  if (peerId) {
+    if (!liveVoicePeers.has(channelId)) liveVoicePeers.set(channelId, new Map());
+    const peers = liveVoicePeers.get(channelId);
+    res.write("event: peer-list\\ndata: " + JSON.stringify({ peers: Array.from(peers.keys()) }) + "\\n\\n");
+    peers.set(peerId, res);
+    sendVoiceEvent(channelId, "peer-joined", { peerId }, peerId);
+  }
+  const keepAlive = setInterval(() => res.write(": keep-alive\\n\\n"), 20000);
   req.on("close", () => {
     clearInterval(keepAlive);
     webVoiceListeners.get(channelId)?.delete(res);
     if (webVoiceListeners.get(channelId)?.size === 0) webVoiceListeners.delete(channelId);
-    console.log("[WEB VOICE] Client aus Website-Sprachkanal " + channelId + " getrennt.");
+    if (peerId && liveVoicePeers.get(channelId)?.get(peerId) === res) {
+      liveVoicePeers.get(channelId).delete(peerId);
+      sendVoiceEvent(channelId, "peer-left", { peerId });
+      if (liveVoicePeers.get(channelId).size === 0) liveVoicePeers.delete(channelId);
+    }
   });
+});
+app.post("/api/voice/:channelId/signal", async (req, res) => {
+  const channelId = clean(req.params.channelId, 32);
+  const from = clean(req.body?.from, 80), to = clean(req.body?.to, 80), signal = req.body?.signal;
+  if (!from || !to || !signal || !await isWebVoiceChannel(channelId)) return res.status(400).json({ ok: false, error: "Ungültige Sprachverbindung." });
+  const target = liveVoicePeers.get(channelId)?.get(to);
+  if (!target) return res.status(404).json({ ok: false, error: "Teilnehmer nicht mehr verbunden." });
+  target.write("event: signal\\ndata: " + JSON.stringify({ from, signal }) + "\\n\\n");
+  res.json({ ok: true });
+});
+app.post("/api/channels", async (req, res) => {
+  if (!process.env.WEB_ADMIN_SECRET || req.get("authorization") !== "Bearer " + process.env.WEB_ADMIN_SECRET)
+    return res.status(401).json({ ok: false, error: "Nur Admins dürfen Sprachkanäle erstellen." });
+  try {
+    const name = clean(req.body?.name, 90);
+    if (name.length < 2) return res.status(400).json({ ok: false, error: "Kanalname muss mindestens 2 Zeichen haben." });
+    const guild = await client.guilds.fetch(GUILD_ID);
+    const channel = await guild.channels.create({ name, type: ChannelType.GuildVoice, topic: "WEBVOICE_CHANNEL" });
+    res.status(201).json({ ok: true, channel: { id: channel.id, name: channel.name } });
+  } catch (error) {
+    console.error("[CHANNEL CREATE]", error);
+    res.status(500).json({ ok: false, error: "Kanal konnte nicht erstellt werden." });
+  }
 });
 app.post("/api/alarm", async (req, res) => {
   if (!WEBHOOK_SECRET || req.get("authorization") !== "Bearer " + WEBHOOK_SECRET) {
