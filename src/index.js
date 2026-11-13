@@ -324,8 +324,11 @@ client.once("ready", async () => {
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (!["alarm", "probealarm", "probe", "sprachkanal"].includes(interaction.commandName)) return;
-  const memberRoles = interaction.member?.roles?.cache;
-  if (!memberRoles?.has(COMMAND_ROLE_ID)) {
+  const memberRoles = interaction.member?.roles;
+  const hasCommandRole = Array.isArray(memberRoles)
+    ? memberRoles.includes(COMMAND_ROLE_ID)
+    : memberRoles?.cache?.has(COMMAND_ROLE_ID);
+  if (!hasCommandRole) {
     return interaction.reply({
       content: "❌ Du benötigst die freigeschaltete Rolle, um diesen Befehl zu benutzen.",
       ephemeral: true
