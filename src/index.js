@@ -5,7 +5,6 @@ const {
   Client, GatewayIntentBits, SlashCommandBuilder, SlashCommandSubcommandBuilder,
   REST, Routes, PermissionFlagsBits
 } = require("discord.js");
-const { playAlarmSequence } = require("./voice");
 
 const app = express();
 const allowedOrigins = (process.env.WEB_ALLOWED_ORIGINS || "https://buhntech-dev.github.io")
@@ -93,16 +92,7 @@ async function queueAlarm(body, source = "Webhook") {
     if (alarmHistory.length > 30) alarmHistory.length = 30;
     console.log("[ALARM] #" + alarmCount + " von " + source + ": " + announcement);
     broadcastWebAlarm(body, announcement, source);
-    const voiceTask = playAlarmSequence(client, {
-      guildId: clean(body.guildId || GUILD_ID, 32),
-      channelIds: body.channelId ? [clean(body.channelId, 32)] : VOICE_CHANNEL_IDS,
-      announcement,
-      audioUrl: clean(body.audioUrl || process.env.ALARM_AUDIO_URL, 1500)
-    });
-    const messageTask = sendAnnouncementMessage(body, announcement, source);
-    const results = await Promise.allSettled([voiceTask, messageTask]);
-    const errors = results.filter(r => r.status === "rejected").map(r => r.reason?.message || String(r.reason));
-    if (errors.length) throw new Error(errors.join(" | "));
+    await sendAnnouncementMessage(body, announcement, source);
   });
   alarmQueue = task.catch(() => {});
   return task;
