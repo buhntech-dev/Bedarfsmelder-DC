@@ -40,6 +40,14 @@ let alarmQueue = Promise.resolve();
 let lastAlarmAt = null;
 let alarmCount = 0;
 const alarmHistory = [];
+const webVoiceListeners = new Map();
+function broadcastWebAlarm(body, announcement, source) {
+  const payload = JSON.stringify({ announcement, source, at: new Date().toISOString(), probealarm: !!body.probealarm });
+  for (const [channelId, listeners] of webVoiceListeners) {
+    if (body.channelId && body.channelId !== channelId) continue;
+    for (const response of listeners) response.write("event: alarm\\ndata: " + payload + "\\n\\n");
+  }
+}
 let scheduleMessage = null;
 let probeSchedule = null;
 let lastScheduleMinute = null;
@@ -84,6 +92,7 @@ async function queueAlarm(body, source = "Webhook") {
     alarmHistory.unshift({ id: alarmCount, at: lastAlarmAt, source, probealarm: !!body.probealarm, stichwort: clean(body.stichwort, 120), plz: clean(body.plz, 12), adresse: clean(body.adresse, 180), meldebild: clean(body.meldebild, 350), fahrzeuge: clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.join(", ") : body.fahrzeuge, 180), status: "wird alarmiert" });
     if (alarmHistory.length > 30) alarmHistory.length = 30;
     console.log("[ALARM] #" + alarmCount + " von " + source + ": " + announcement);
+    broadcastWebAlarm(body, announcement, source);
     const voiceTask = playAlarmSequence(client, {
       guildId: clean(body.guildId || GUILD_ID, 32),
       channelIds: body.channelId ? [clean(body.channelId, 32)] : VOICE_CHANNEL_IDS,
@@ -186,6 +195,22 @@ app.get("/api/channels", async (_req, res) => {
   }
 });
 app.get("/api/alarms", (_req, res) => res.json({ ok: true, alarms: alarmHistory }));
+app.get("/api/stream/:channelId", (req, res) => {
+  const channelId = clean(req.params.channelId, 32);
+  if (!VOICE_CHANNEL_IDS.includes(channelId)) return res.status(404).json({ ok: false, error: "Unbekannter Sprachkanal." });
+  res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "Access-Control-Allow-Origin": allowedOrigins[0] || "*" });
+  res.write("retry: 3000\\n\\n");
+  if (!webVoiceListeners.has(channelId)) webVoiceListeners.set(channelId, new Set());
+  webVoiceListeners.get(channelId).add(res);
+  console.log("[WEB VOICE] Client im Website-Sprachkanal " + channelId + " verbunden.");
+  const keepAlive = setInterval(() => res.write(": keep-alive\\n\\n"), 20000);
+  req.on("close", () => {
+    clearInterval(keepAlive);
+    webVoiceListeners.get(channelId)?.delete(res);
+    if (webVoiceListeners.get(channelId)?.size === 0) webVoiceListeners.delete(channelId);
+    console.log("[WEB VOICE] Client aus Website-Sprachkanal " + channelId + " getrennt.");
+  });
+});
 app.post("/api/alarm", async (req, res) => {
   if (!WEBHOOK_SECRET || req.get("authorization") !== "Bearer " + WEBHOOK_SECRET) {
     return res.status(401).json({ ok: false, error: "Nicht autorisiert." });
