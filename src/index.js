@@ -52,7 +52,7 @@ async function sendAnnouncementMessage(body, announcement, source) {
     if (!channel?.isTextBased() || !channel.send) throw new Error("Der Meldekanal ist kein beschreibbarer Textkanal.");
     const heading = body.probealarm ? "🧪 **PROBEALARM**" : "🚨 **NEUE ALARMIERUNG**";
     await channel.send({
-      content: heading + "\n" + announcement + "\n\n<text:> Quelle: " + clean(source, 80),
+      content: heading + "\n" + announcement + "\n\nQuelle: " + clean(source, 80),
       allowedMentions: { parse: [] }
     });
     console.log("[ANNOUNCEMENT] Nachricht in Kanal " + ANNOUNCEMENT_CHANNEL_ID + " gesendet.");
@@ -119,6 +119,7 @@ async function loadSchedule() {
       const parsed = JSON.parse(raw);
       if (parsed && Number.isInteger(parsed.weekday) && /^([01]\d|2[0-3]):[0-5]\d$/.test(parsed.time)) {
         probeSchedule = parsed;
+        lastScheduleMinute = parsed.lastRun || null;
         console.log("[PROBE] Wöchentlicher Probealarm geladen: " + scheduleLabel(probeSchedule));
       }
     }
