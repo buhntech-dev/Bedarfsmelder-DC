@@ -8,6 +8,19 @@ const {
 const { playAlarmSequence } = require("./voice");
 
 const app = express();
+const allowedOrigins = (process.env.WEB_ALLOWED_ORIGINS || "https://buhntech-dev.github.io")
+  .split(",").map(origin => origin.trim()).filter(Boolean);
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
 app.use(express.json({ limit: "256kb" }));
 app.use(express.static(path.join(__dirname, "..", "public")));
 
