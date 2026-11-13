@@ -173,11 +173,11 @@ app.get("/api/status", (_req, res) => res.json({
 app.get("/api/channels", async (_req, res) => {
   try {
     const guild = await client.guilds.fetch(GUILD_ID);
-    const channels = [];
-    for (const id of VOICE_CHANNEL_IDS) {
-      const channel = await guild.channels.fetch(id).catch(() => null);
-      if (channel && channel.isVoiceBased()) channels.push({ id: channel.id, name: channel.name, type: "voice" });
-    }
+    const allChannels = await guild.channels.fetch();
+    const channels = allChannels
+      .filter(channel => channel && channel.isVoiceBased() &&
+        (VOICE_CHANNEL_IDS.includes(channel.id) || (channel.topic || "").startsWith("WEBVOICE_CHANNEL")))
+      .map(channel => ({ id: channel.id, name: channel.name, type: "voice" }));
     res.json({ ok: true, channels });
   } catch (error) {
     console.error("[CHANNELS]", error);
@@ -248,7 +248,16 @@ const commands = [
     .setName("probealarm")
     .setDescription("Löst sofort einen gekennzeichneten Probealarm aus.")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).toJSON(),
-  probeCommand
+  probeCommand,
+  new SlashCommandBuilder()
+    .setName("sprachkanal")
+    .setDescription("Website-Sprachkanäle verwalten.")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .addSubcommand(sub => sub
+      .setName("erstellen")
+      .setDescription("Einen neuen Website-Sprachkanal erstellen.")
+      .addStringOption(o => o.setName("name").setDescription("Name des neuen Kanals").setRequired(true).setMinLength(2).setMaxLength(90)))
+    .toJSON()
 ];
 
 client.once("ready", async () => {
@@ -271,6 +280,14 @@ client.on("interactionCreate", async interaction => {
   if (!["alarm", "probealarm", "probe", "sprachkanal"].includes(interaction.commandName)) return;
   await interaction.deferReply({ ephemeral: true });
   try {
+    if (interaction.commandName === "sprachkanal") {
+      const name = clean(interaction.options.getString("name"), 90);
+      const guild = await client.guilds.fetch(GUILD_ID);
+      const channel = await guild.channels.create({
+        name, type: ChannelType.GuildVoice, topic: "WEBVOICE_CHANNEL"
+      });
+      return interaction.editReply("✅ Website-Sprachkanal **" + channel.name + "** wurde erstellt. Aktualisiere die Website – der Kanal erscheint dann in der Liste.");
+    }
     if (interaction.commandName === "alarm") {
       await queueAlarm({
         stichwort: interaction.options.getString("stichwort"),
