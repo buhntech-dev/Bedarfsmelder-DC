@@ -42,6 +42,25 @@ async function getWebVoiceCategory(guild, create = false) {
   if (!category && create) category = await guild.channels.create({ name: WEB_VOICE_CATEGORY_NAME, type: ChannelType.GuildCategory });
   return category || null;
 }
+async function createWebsiteVoiceChannel(guild, name) {
+  const category = await getWebVoiceCategory(guild, true);
+  // Discord kann bestimmte automatisch gesetzte Kanal-Themen ablehnen.
+  // Die Website erkennt diese Kanäle ausschließlich über die Kategorie.
+  return guild.channels.create({ name, type: ChannelType.GuildVoice, parent: category.id });
+}
+
+async function memberHasCommandRole(interaction) {
+  const roleCache = interaction.member?.roles?.cache;
+  if (roleCache?.has(COMMAND_ROLE_ID)) return true;
+  try {
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+    return member.roles.cache.has(COMMAND_ROLE_ID);
+  } catch (error) {
+    console.error("[ROLE CHECK] Mitglied/Rolle konnte nicht geprüft werden:", error.message);
+    return false;
+  }
+}
+
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
 let alarmQueue = Promise.resolve();
@@ -253,8 +272,7 @@ app.post("/api/channels", async (req, res) => {
     const name = clean(req.body?.name, 90);
     if (name.length < 2) return res.status(400).json({ ok: false, error: "Kanalname muss mindestens 2 Zeichen haben." });
     const guild = await client.guilds.fetch(GUILD_ID);
-    const category = await getWebVoiceCategory(guild, true);
-    const channel = await guild.channels.create({ name, type: ChannelType.GuildVoice, parent: category.id });
+    const channel = await createWebsiteVoiceChannel(guild, name);
     res.status(201).json({ ok: true, channel: { id: channel.id, name: channel.name } });
   } catch (error) {
     console.error("[CHANNEL CREATE]", error);
@@ -338,10 +356,7 @@ client.once("ready", async () => {
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
   if (!["alarm", "probealarm", "probe", "sprachkanal"].includes(interaction.commandName)) return;
-  const memberRoles = interaction.member?.roles;
-  const hasCommandRole = Array.isArray(memberRoles)
-    ? memberRoles.includes(COMMAND_ROLE_ID)
-    : memberRoles?.cache?.has(COMMAND_ROLE_ID);
+  const hasCommandRole = await memberHasCommandRole(interaction);
   if (!hasCommandRole) {
     return interaction.reply({
       content: "❌ Du benötigst die freigeschaltete Rolle, um diesen Befehl zu benutzen.",
@@ -353,10 +368,7 @@ client.on("interactionCreate", async interaction => {
     if (interaction.commandName === "sprachkanal") {
       const name = clean(interaction.options.getString("name"), 90);
       const guild = await client.guilds.fetch(GUILD_ID);
-      const category = await getWebVoiceCategory(guild, true);
-      const channel = await guild.channels.create({
-        name, type: ChannelType.GuildVoice, parent: category.id
-      });
+      const channel = await createWebsiteVoiceChannel(guild, name);
       return interaction.editReply("✅ Website-Sprachkanal **" + channel.name + "** wurde erstellt. Aktualisiere die Website – der Kanal erscheint dann in der Liste.");
     }
     if (interaction.commandName === "alarm") {
