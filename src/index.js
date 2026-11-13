@@ -34,6 +34,8 @@ const WEBHOOK_SECRET = process.env.ALARM_WEBHOOK_SECRET;
 const TIME_ZONE = process.env.TIME_ZONE || "Europe/Berlin";
 const COMMAND_ROLE_ID = "1565059308641853601";
 const SCHEDULE_MARKER = "[BEDARFSMELDER_PROBEPLAN_V1]";
+const VEHICLE_MARKER = "[BEDARFSMELDER_FAHRZEUGE_V1]";
+let vehicles = [];
 const WEB_VOICE_CATEGORY_NAME = "Website-Sprachkanäle";
 
 async function getWebVoiceCategory(guild, create = false) {
@@ -84,10 +86,15 @@ function sendVoiceEvent(channelId, event, payload, exceptPeer = null) {
   const data = "event: " + event + "\ndata: " + JSON.stringify(payload) + "\n\n";
   for (const [peerId, response] of peers) if (peerId !== exceptPeer) response.write(data);
 }
-function broadcastWebAlarm(body, announcement, source) {
-  const payload = JSON.stringify({ announcement, source, at: new Date().toISOString(), probealarm: !!body.probealarm });
+async function broadcastWebAlarm(body, announcement, source) {
   for (const [channelId, listeners] of webVoiceListeners) {
     if (body.channelId && body.channelId !== channelId) continue;
+    let sound = "alarm";
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (channel?.name === "Auf Wache") sound = "theatergong";
+    } catch {}
+    const payload = JSON.stringify({ announcement, source, sound, at: new Date().toISOString(), probealarm: !!body.probealarm });
     for (const response of listeners) response.write("event: alarm\ndata: " + payload + "\n\n");
   }
 }
@@ -100,13 +107,13 @@ function clean(value, max = 500) {
 }
 function makeAnnouncement(body) {
   const parts = [
-    "Alarmierung der Feuerwehr und des Rettungsdienstes.",
+    "ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
     body.probealarm ? "Dies ist ein Probealarm." : "Es liegt ein neuer Einsatz vor.",
     body.stichwort ? "Stichwort: " + clean(body.stichwort, 120) : "",
     body.plz ? "Postleitzahl: " + clean(body.plz, 12) : "",
     body.adresse ? "Einsatzort: " + clean(body.adresse, 180) : "",
     body.meldebild ? "Meldebild: " + clean(body.meldebild, 350) : "",
-    body.fahrzeuge ? "Alarmierte Kräfte: " + clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.join(", ") : body.fahrzeuge, 180) : "",
+    body.fahrzeuge ? "Alarmierte Kräfte: " + clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.map(v => typeof v === "string" ? v : [v.funkrufname, v.name].filter(Boolean).join(" ")).join(", ") : body.fahrzeuge, 500) : "",
     body.hinweis ? "Zusatzinformation: " + clean(body.hinweis, 250) : ""
   ].filter(Boolean);
   return parts.join("\n");
@@ -135,7 +142,7 @@ async function queueAlarm(body, source = "Webhook") {
     alarmHistory.unshift({ id: alarmCount, at: lastAlarmAt, source, probealarm: !!body.probealarm, stichwort: clean(body.stichwort, 120), plz: clean(body.plz, 12), adresse: clean(body.adresse, 180), meldebild: clean(body.meldebild, 350), fahrzeuge: clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.join(", ") : body.fahrzeuge, 180), status: "wird alarmiert" });
     if (alarmHistory.length > 30) alarmHistory.length = 30;
     console.log("[ALARM] #" + alarmCount + " von " + source + ": " + announcement);
-    broadcastWebAlarm(body, announcement, source);
+    await broadcastWebAlarm(body, announcement, source);
     await sendAnnouncementMessage(body, announcement, source);
   });
   alarmQueue = task.catch(() => {});
@@ -152,6 +159,41 @@ const weekdayNumbers = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 
 const weekdayNames = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 function scheduleLabel(s) {
   return weekdayNames[s.weekday] + " um " + s.time + " Uhr (" + TIME_ZONE + ")";
+}
+async function findVehicleMessage(channel) {
+  const messages = await channel.messages.fetch({ limit: 100 });
+  return messages.find(m => m.author.id === client.user.id && m.content.includes(VEHICLE_MARKER)) || null;
+}
+async function saveVehicles() {
+  const channel = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
+  if (!channel?.isTextBased() || !channel.send) throw new Error("Meldekanal nicht verfügbar oder keine Schreibrechte.");
+  const payload = VEHICLE_MARKER + "\n" + JSON.stringify(vehicles);
+  const message = await findVehicleMessage(channel);
+  if (message) await message.edit({ content: payload });
+  else await channel.send({ content: payload, allowedMentions: { parse: [] } });
+}
+async function loadVehicles() {
+  try {
+    const channel = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
+    if (!channel?.isTextBased()) return;
+    const message = await findVehicleMessage(channel);
+    if (message) {
+      const parsed = JSON.parse(message.content.split("\n").slice(1).join("\n"));
+      if (Array.isArray(parsed)) vehicles = parsed.filter(v => v && v.funkrufname && v.name);
+    }
+    console.log("[FAHRZEUGE] " + vehicles.length + " Fahrzeuge geladen.");
+  } catch (error) { console.error("[FAHRZEUGE] Laden fehlgeschlagen:", error); }
+}
+async function ensureDefaultVoiceChannels() {
+  const guild = await client.guilds.fetch(GUILD_ID);
+  const category = await getWebVoiceCategory(guild, true);
+  const channels = await guild.channels.fetch();
+  for (const name of ["Bedingt verfügbar", "Auf Wache"]) {
+    if (!channels.some(channel => channel && channel.type === ChannelType.GuildVoice && channel.parentId === category.id && channel.name === name)) {
+      await guild.channels.create({ name, type: ChannelType.GuildVoice, parent: category.id });
+      console.log("[VOICE CHANNEL] Standardkanal erstellt: " + name);
+    }
+  }
 }
 async function findScheduleMessage(channel) {
   const messages = await channel.messages.fetch({ limit: 100 });
@@ -320,7 +362,21 @@ const commands = [
     .addStringOption(o => o.setName("adresse").setDescription("Einsatzadresse").setRequired(true).setMaxLength(180))
     .addStringOption(o => o.setName("plz").setDescription("Postleitzahl").setRequired(false).setMaxLength(12))
     .addStringOption(o => o.setName("meldebild").setDescription("Was ist passiert?").setRequired(false).setMaxLength(350))
-    .addStringOption(o => o.setName("fahrzeuge").setDescription("Alarmierte Fahrzeuge").setRequired(false).setMaxLength(180))
+    .addStringOption(o => o.setName("fahrzeug1").setDescription("Erstes Fahrzeug").setRequired(false).setAutocomplete(true))
+    .addStringOption(o => o.setName("fahrzeug2").setDescription("Zweites Fahrzeug").setRequired(false).setAutocomplete(true))
+    .addStringOption(o => o.setName("fahrzeug3").setDescription("Drittes Fahrzeug").setRequired(false).setAutocomplete(true))
+    .addStringOption(o => o.setName("fahrzeug4").setDescription("Viertes Fahrzeug").setRequired(false).setAutocomplete(true))
+    .addStringOption(o => o.setName("fahrzeug5").setDescription("Fünftes Fahrzeug").setRequired(false).setAutocomplete(true))
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName("fahrzeug")
+    .setDescription("Fahrzeugbestand verwalten.")
+    .addSubcommand(sub => sub.setName("hinzufuegen").setDescription("Fahrzeug anlegen.")
+      .addStringOption(o => o.setName("funkrufname").setDescription("Funkrufname").setRequired(true).setMaxLength(80))
+      .addStringOption(o => o.setName("name").setDescription("Fahrzeugname, z. B. HLF 1").setRequired(true).setMaxLength(80)))
+    .addSubcommand(sub => sub.setName("liste").setDescription("Fahrzeuge anzeigen."))
+    .addSubcommand(sub => sub.setName("entfernen").setDescription("Fahrzeug entfernen.")
+      .addStringOption(o => o.setName("funkrufname").setDescription("Funkrufname").setRequired(true).setAutocomplete(true)))
     .toJSON(),
   new SlashCommandBuilder()
     .setName("probealarm")
@@ -350,12 +406,23 @@ client.once("ready", async () => {
     console.error("[COMMAND REGISTRATION ERROR]", error);
   }
   await loadSchedule();
+  await loadVehicles();
+  await ensureDefaultVoiceChannels().catch(error => console.error("[VOICE CHANNELS]", error));
   setInterval(checkScheduledProbe, 15000);
 });
 
 client.on("interactionCreate", async interaction => {
+  if (interaction.isAutocomplete()) {
+    const focused = interaction.options.getFocused(true);
+    if (focused.name === "funkrufname" || focused.name.startsWith("fahrzeug")) {
+      const search = String(focused.value || "").toLowerCase();
+      const matches = vehicles.filter(v => (v.funkrufname + " " + v.name).toLowerCase().includes(search)).slice(0, 25);
+      return interaction.respond(matches.map(v => ({ name: (v.funkrufname + " – " + v.name).slice(0, 100), value: v.funkrufname }))).catch(() => {});
+    }
+    return interaction.respond([]).catch(() => {});
+  }
   if (!interaction.isChatInputCommand()) return;
-  if (!["alarm", "probealarm", "probe", "sprachkanal"].includes(interaction.commandName)) return;
+  if (!["alarm", "probealarm", "probe", "sprachkanal", "fahrzeug"].includes(interaction.commandName)) return;
   const hasCommandRole = await memberHasCommandRole(interaction);
   if (!hasCommandRole) {
     return interaction.reply({
@@ -365,6 +432,26 @@ client.on("interactionCreate", async interaction => {
   }
   await interaction.deferReply({ ephemeral: true });
   try {
+    if (interaction.commandName === "fahrzeug") {
+      const sub = interaction.options.getSubcommand();
+      if (sub === "hinzufuegen") {
+        const funkrufname = clean(interaction.options.getString("funkrufname"), 80);
+        const name = clean(interaction.options.getString("name"), 80);
+        if (vehicles.some(v => v.funkrufname.toLowerCase() === funkrufname.toLowerCase())) return interaction.editReply("❌ Dieser Funkrufname ist bereits vergeben.");
+        vehicles.push({ funkrufname, name });
+        await saveVehicles();
+        return interaction.editReply("✅ Fahrzeug gespeichert: **" + funkrufname + " – " + name + "**.");
+      }
+      if (sub === "liste") {
+        return interaction.editReply(vehicles.length ? "**Fahrzeugbestand:**\n" + vehicles.map(v => "• **" + v.funkrufname + "** – " + v.name).join("\n") : "Noch keine Fahrzeuge angelegt. Nutze /fahrzeug hinzufuegen.");
+      }
+      const funkrufname = interaction.options.getString("funkrufname");
+      const before = vehicles.length;
+      vehicles = vehicles.filter(v => v.funkrufname !== funkrufname);
+      if (vehicles.length === before) return interaction.editReply("❌ Fahrzeug nicht gefunden.");
+      await saveVehicles();
+      return interaction.editReply("✅ Fahrzeug **" + funkrufname + "** wurde entfernt.");
+    }
     if (interaction.commandName === "sprachkanal") {
       const name = clean(interaction.options.getString("name"), 90);
       const guild = await client.guilds.fetch(GUILD_ID);
@@ -377,7 +464,12 @@ client.on("interactionCreate", async interaction => {
         adresse: interaction.options.getString("adresse"),
         plz: interaction.options.getString("plz"),
         meldebild: interaction.options.getString("meldebild"),
-        fahrzeuge: interaction.options.getString("fahrzeuge")
+        fahrzeuge: ["fahrzeug1", "fahrzeug2", "fahrzeug3", "fahrzeug4", "fahrzeug5"]
+          .map(key => interaction.options.getString(key))
+          .filter(Boolean)
+          .map(funk => vehicles.find(v => v.funkrufname === funk))
+          .filter(Boolean)
+          .map(v => ({ funkrufname: v.funkrufname, name: v.name }))
       }, "Discord /alarm");
       return interaction.editReply("✅ Alarm wurde verarbeitet: Sprachkanäle und Meldekanal.");
     }
