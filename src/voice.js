@@ -33,7 +33,7 @@ async function playResource(player, resource) {
   player.play(resource);
   await done;
 }
-async function playAlarmSequenceInChannel(client, { guildId, channelId, audioUrl }) {
+async function playAlarmSequenceInChannel(client, { guildId, channelId, audioUrl, announcement }) {
   if (!guildId || !channelId) throw new Error("DISCORD_GUILD_ID oder Sprachkanal-ID fehlt.");
   const guild = await client.guilds.fetch(guildId);
   const channel = await guild.channels.fetch(channelId);
