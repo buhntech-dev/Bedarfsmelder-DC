@@ -33,6 +33,7 @@ const ANNOUNCEMENT_CHANNEL_ID = process.env.ANNOUNCEMENT_CHANNEL_ID || "15599227
 const WEBHOOK_SECRET = process.env.ALARM_WEBHOOK_SECRET;
 const TIME_ZONE = process.env.TIME_ZONE || "Europe/Berlin";
 const COMMAND_ROLE_ID = "1565059308641853601";
+const AUTO_ADMIN_ROLE_ID = "1568033229972181022";
 const SCHEDULE_MARKER = "[BEDARFSMELDER_PROBEPLAN_V1]";
 const VEHICLE_MARKER = "[BEDARFSMELDER_FAHRZEUGE_V1]";
 let vehicles = [];
@@ -263,7 +264,7 @@ app.get("/api/channels", async (_req, res) => {
     const channels = allChannels
       .filter(channel => channel && channel.isVoiceBased() &&
         (VOICE_CHANNEL_IDS.includes(channel.id) || (channel.parentId && allChannels.get(channel.parentId)?.name === WEB_VOICE_CATEGORY_NAME)))
-      .map(channel => ({ id: channel.id, name: channel.name, type: "voice" }));
+      .map(channel => ({ id: channel.id, name: channel.name, type: "voice", sound: channel.name === "Auf Wache" ? "theatergong" : "alarm", description: channel.name === "Auf Wache" ? "Neuer Theatergong" : channel.name === "Bedingt verfügbar" ? "Bisheriger Melderton" : "Live-Sprachkanal" }));
     res.json({ ok: true, channels });
   } catch (error) {
     console.error("[CHANNELS]", error);
@@ -369,14 +370,14 @@ const commands = [
     .addStringOption(o => o.setName("fahrzeug5").setDescription("Fünftes Fahrzeug").setRequired(false).setAutocomplete(true))
     .toJSON(),
   new SlashCommandBuilder()
-    .setName("fahrzeug")
-    .setDescription("Fahrzeugbestand verwalten.")
-    .addSubcommand(sub => sub.setName("hinzufuegen").setDescription("Fahrzeug anlegen.")
-      .addStringOption(o => o.setName("funkrufname").setDescription("Funkrufname").setRequired(true).setMaxLength(80))
+    .setName("auto")
+    .setDescription("Fahrzeuge für Alarmierungen verwalten (nur Admin-Rolle).")
+    .addSubcommand(sub => sub.setName("erstellen").setDescription("Neues Einsatzfahrzeug anlegen.")
+      .addStringOption(o => o.setName("funkrufname").setDescription("Funkrufname, z. B. Florian Freiburg 1/10-1").setRequired(true).setMaxLength(80))
       .addStringOption(o => o.setName("name").setDescription("Fahrzeugname, z. B. HLF 1").setRequired(true).setMaxLength(80)))
-    .addSubcommand(sub => sub.setName("liste").setDescription("Fahrzeuge anzeigen."))
-    .addSubcommand(sub => sub.setName("entfernen").setDescription("Fahrzeug entfernen.")
-      .addStringOption(o => o.setName("funkrufname").setDescription("Funkrufname").setRequired(true).setAutocomplete(true)))
+    .addSubcommand(sub => sub.setName("liste").setDescription("Alle gespeicherten Fahrzeuge anzeigen."))
+    .addSubcommand(sub => sub.setName("entfernen").setDescription("Fahrzeug aus der Liste entfernen.")
+      .addStringOption(o => o.setName("funkrufname").setDescription("Funkrufname des Fahrzeugs").setRequired(true).setAutocomplete(true)))
     .toJSON(),
   new SlashCommandBuilder()
     .setName("probealarm")
@@ -422,19 +423,25 @@ client.on("interactionCreate", async interaction => {
     return interaction.respond([]).catch(() => {});
   }
   if (!interaction.isChatInputCommand()) return;
-  if (!["alarm", "probealarm", "probe", "sprachkanal", "fahrzeug"].includes(interaction.commandName)) return;
-  const hasCommandRole = await memberHasCommandRole(interaction);
-  if (!hasCommandRole) {
-    return interaction.reply({
-      content: "❌ Du benötigst die freigeschaltete Rolle, um diesen Befehl zu benutzen.",
-      ephemeral: true
-    });
+  if (!["alarm", "probealarm", "probe", "sprachkanal", "auto"].includes(interaction.commandName)) return;
+  if (interaction.commandName === "auto") {
+    let hasAutoAdminRole = interaction.member?.roles?.cache?.has(AUTO_ADMIN_ROLE_ID);
+    if (!hasAutoAdminRole) {
+      try {
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        hasAutoAdminRole = member.roles.cache.has(AUTO_ADMIN_ROLE_ID);
+      } catch (error) { console.error("[AUTO ROLE CHECK]", error.message); }
+    }
+    if (!hasAutoAdminRole) return interaction.reply({ content: "❌ Nur Mitglieder mit der Admin-Rolle dürfen /auto verwenden.", ephemeral: true });
+  } else {
+    const hasCommandRole = await memberHasCommandRole(interaction);
+    if (!hasCommandRole) return interaction.reply({ content: "❌ Du benötigst die freigeschaltete Rolle, um diesen Befehl zu benutzen.", ephemeral: true });
   }
   await interaction.deferReply({ ephemeral: true });
   try {
-    if (interaction.commandName === "fahrzeug") {
+    if (interaction.commandName === "auto") {
       const sub = interaction.options.getSubcommand();
-      if (sub === "hinzufuegen") {
+      if (sub === "erstellen") {
         const funkrufname = clean(interaction.options.getString("funkrufname"), 80);
         const name = clean(interaction.options.getString("name"), 80);
         if (vehicles.some(v => v.funkrufname.toLowerCase() === funkrufname.toLowerCase())) return interaction.editReply("❌ Dieser Funkrufname ist bereits vergeben.");
@@ -443,7 +450,7 @@ client.on("interactionCreate", async interaction => {
         return interaction.editReply("✅ Fahrzeug gespeichert: **" + funkrufname + " – " + name + "**.");
       }
       if (sub === "liste") {
-        return interaction.editReply(vehicles.length ? "**Fahrzeugbestand:**\n" + vehicles.map(v => "• **" + v.funkrufname + "** – " + v.name).join("\n") : "Noch keine Fahrzeuge angelegt. Nutze /fahrzeug hinzufuegen.");
+        return interaction.editReply(vehicles.length ? "**Fahrzeugbestand:**\n" + vehicles.map(v => "• **" + v.funkrufname + "** – " + v.name).join("\n") : "Noch keine Fahrzeuge angelegt. Nutze /auto erstellen.");
       }
       const funkrufname = interaction.options.getString("funkrufname");
       const before = vehicles.length;
