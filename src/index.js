@@ -39,6 +39,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 let alarmQueue = Promise.resolve();
 let lastAlarmAt = null;
 let alarmCount = 0;
+const alarmHistory = [];
 let scheduleMessage = null;
 let probeSchedule = null;
 let lastScheduleMinute = null;
@@ -168,6 +169,21 @@ app.get("/api/status", (_req, res) => res.json({
   probeSchedule: probeSchedule ? scheduleLabel(probeSchedule) : null,
   alarmCount, lastAlarmAt
 }));
+app.get("/api/channels", async (_req, res) => {
+  try {
+    const guild = await client.guilds.fetch(GUILD_ID);
+    const channels = [];
+    for (const id of VOICE_CHANNEL_IDS) {
+      const channel = await guild.channels.fetch(id).catch(() => null);
+      if (channel && channel.isVoiceBased()) channels.push({ id: channel.id, name: channel.name, type: "voice" });
+    }
+    res.json({ ok: true, channels });
+  } catch (error) {
+    console.error("[CHANNELS]", error);
+    res.status(503).json({ ok: false, error: "Discord-Kanäle konnten nicht geladen werden." });
+  }
+});
+app.get("/api/alarms", (_req, res) => res.json({ ok: true, alarms: alarmHistory }));
 app.post("/api/alarm", async (req, res) => {
   if (!WEBHOOK_SECRET || req.get("authorization") !== "Bearer " + WEBHOOK_SECRET) {
     return res.status(401).json({ ok: false, error: "Nicht autorisiert." });
