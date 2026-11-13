@@ -384,7 +384,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName("voralarm")
     .setDescription("Löst einen Voralarm mit Ton und Sprachdurchsage aus.")
-    .addStringOption(o => o.setName("stichwort").setDescription("Anlass / Stichwort").setRequired(true).setMaxLength(120))
     .addStringOption(o => o.setName("adresse").setDescription("Einsatzort oder Bereich").setRequired(false).setMaxLength(180))
     .addStringOption(o => o.setName("plz").setDescription("Postleitzahl").setRequired(false).setMaxLength(12))
     .addStringOption(o => o.setName("hinweis").setDescription("Zusätzliche Information").setRequired(false).setMaxLength(250))
