@@ -48,7 +48,7 @@ async function isWebVoiceChannel(channelId) {
 }
 function sendVoiceEvent(channelId, event, payload, exceptPeer = null) {
   const peers = liveVoicePeers.get(channelId); if (!peers) return;
-  const data = "event: " + event + "\\ndata: " + JSON.stringify(payload) + "\\n\\n";
+  const data = "event: " + event + "\ndata: " + JSON.stringify(payload) + "\n\n";
   for (const [peerId, response] of peers) if (peerId !== exceptPeer) response.write(data);
 }
 function broadcastWebAlarm(body, announcement, source) {
@@ -201,17 +201,17 @@ app.get("/api/stream/:channelId", async (req, res) => {
   const peerId = clean(req.query.peerId, 80);
   if (!await isWebVoiceChannel(channelId)) return res.status(404).json({ ok: false, error: "Unbekannter Sprachkanal." });
   res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "Access-Control-Allow-Origin": allowedOrigins[0] || "*" });
-  res.write("retry: 3000\\n\\n");
+  res.write("retry: 3000\n\n");
   if (!webVoiceListeners.has(channelId)) webVoiceListeners.set(channelId, new Set());
   webVoiceListeners.get(channelId).add(res);
   if (peerId) {
     if (!liveVoicePeers.has(channelId)) liveVoicePeers.set(channelId, new Map());
     const peers = liveVoicePeers.get(channelId);
-    res.write("event: peer-list\\ndata: " + JSON.stringify({ peers: Array.from(peers.keys()) }) + "\\n\\n");
+    res.write("event: peer-list\ndata: " + JSON.stringify({ peers: Array.from(peers.keys()) }) + "\n\n");
     peers.set(peerId, res);
     sendVoiceEvent(channelId, "peer-joined", { peerId }, peerId);
   }
-  const keepAlive = setInterval(() => res.write(": keep-alive\\n\\n"), 20000);
+  const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), 20000);
   req.on("close", () => {
     clearInterval(keepAlive);
     webVoiceListeners.get(channelId)?.delete(res);
@@ -229,7 +229,7 @@ app.post("/api/voice/:channelId/signal", async (req, res) => {
   if (!from || !to || !signal || !await isWebVoiceChannel(channelId)) return res.status(400).json({ ok: false, error: "Ungültige Sprachverbindung." });
   const target = liveVoicePeers.get(channelId)?.get(to);
   if (!target) return res.status(404).json({ ok: false, error: "Teilnehmer nicht mehr verbunden." });
-  target.write("event: signal\\ndata: " + JSON.stringify({ from, signal }) + "\\n\\n");
+  target.write("event: signal\ndata: " + JSON.stringify({ from, signal }) + "\n\n");
   res.json({ ok: true });
 });
 app.post("/api/channels", async (req, res) => {
