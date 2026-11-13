@@ -70,6 +70,8 @@ let alarmQueue = Promise.resolve();
 let lastAlarmAt = null;
 let alarmCount = 0;
 const alarmHistory = [];
+const fivemAlarmEvents = [];
+const FIVEM_API_SECRET = process.env.FIVEM_API_SECRET;
 const webVoiceListeners = new Map();
 const liveVoicePeers = new Map();
 async function isWebVoiceChannel(channelId) {
@@ -142,7 +144,10 @@ async function queueAlarm(body, source = "Webhook") {
   const task = alarmQueue.catch(() => {}).then(async () => {
     alarmCount++;
     lastAlarmAt = new Date().toISOString();
-    alarmHistory.unshift({ id: alarmCount, at: lastAlarmAt, source, probealarm: !!body.probealarm, voralarm: !!body.voralarm, stichwort: clean(body.stichwort, 120), plz: clean(body.plz, 12), adresse: clean(body.adresse, 180), meldebild: clean(body.meldebild, 350), fahrzeuge: clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.join(", ") : body.fahrzeuge, 180), status: "wird alarmiert" });
+    const alarmRecord = { id: alarmCount, at: lastAlarmAt, source, probealarm: !!body.probealarm, voralarm: !!body.voralarm, stichwort: clean(body.stichwort, 120), plz: clean(body.plz, 12), adresse: clean(body.adresse, 180), meldebild: clean(body.meldebild, 350), fahrzeuge: clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.map(v => typeof v === "string" ? v : [v.funkrufname, v.name].filter(Boolean).join(" ")).join(", ") : body.fahrzeuge, 180), status: "wird alarmiert" };
+    alarmHistory.unshift(alarmRecord);
+    fivemAlarmEvents.push({ ...alarmRecord, announcement });
+    if (fivemAlarmEvents.length > 100) fivemAlarmEvents.shift();
     if (alarmHistory.length > 30) alarmHistory.length = 30;
     console.log("[ALARM] #" + alarmCount + " von " + source + ": " + announcement);
     await broadcastWebAlarm(body, announcement, source);
@@ -274,6 +279,13 @@ app.get("/api/channels", async (_req, res) => {
   }
 });
 app.get("/api/alarms", (_req, res) => res.json({ ok: true, alarms: alarmHistory }));
+app.get("/api/fivem/alarms", (req, res) => {
+  if (!FIVEM_API_SECRET || req.get("authorization") !== "Bearer " + FIVEM_API_SECRET)
+    return res.status(401).json({ ok: false, error: "Nicht autorisiert." });
+  const since = Math.max(0, Number(req.query.since || 0));
+  const alarms = fivemAlarmEvents.filter(item => item.id > since);
+  res.json({ ok: true, latestId: alarmCount, alarms });
+});
 app.get("/api/stream/:channelId", async (req, res) => {
   const channelId = clean(req.params.channelId, 32);
   const peerId = clean(req.query.peerId, 80);
@@ -492,7 +504,6 @@ client.on("interactionCreate", async interaction => {
     if (interaction.commandName === "voralarm") {
       await queueAlarm({
         voralarm: true,
-        stichwort: interaction.options.getString("stichwort"),
         adresse: interaction.options.getString("adresse"),
         plz: interaction.options.getString("plz"),
         hinweis: interaction.options.getString("hinweis")
