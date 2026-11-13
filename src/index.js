@@ -81,6 +81,8 @@ async function queueAlarm(body, source = "Webhook") {
   const task = alarmQueue.catch(() => {}).then(async () => {
     alarmCount++;
     lastAlarmAt = new Date().toISOString();
+    alarmHistory.unshift({ id: alarmCount, at: lastAlarmAt, source, probealarm: !!body.probealarm, stichwort: clean(body.stichwort, 120), plz: clean(body.plz, 12), adresse: clean(body.adresse, 180), meldebild: clean(body.meldebild, 350), fahrzeuge: clean(Array.isArray(body.fahrzeuge) ? body.fahrzeuge.join(", ") : body.fahrzeuge, 180), status: "wird alarmiert" });
+    if (alarmHistory.length > 30) alarmHistory.length = 30;
     console.log("[ALARM] #" + alarmCount + " von " + source + ": " + announcement);
     const voiceTask = playAlarmSequence(client, {
       guildId: clean(body.guildId || GUILD_ID, 32),
