@@ -108,7 +108,7 @@ function clean(value, max = 500) {
 }
 function makeAnnouncement(body) {
   const parts = [
-    body.voralarm ? "ACHTUNG. VORALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst." : "NEUE ALARMIERUNG. ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
+    body.voralarm ? "ACHTUNG. VORALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst." : "ALARM für die Berufsfeuerwehr Freiburg und den Rettungsdienst.",
     body.voralarm ? "Dies ist ein Voralarm. Bitte Einsatzbereitschaft herstellen und auf die weitere Alarmierung warten." : body.probealarm ? "Dies ist ein Probealarm." : "Es liegt ein neuer Einsatz vor.",
     body.stichwort ? "Stichwort: " + clean(body.stichwort, 120) : "",
     body.plz ? "Postleitzahl: " + clean(body.plz, 12) : "",
@@ -123,7 +123,7 @@ async function sendAnnouncementMessage(body, announcement, source) {
   try {
     const channel = await client.channels.fetch(ANNOUNCEMENT_CHANNEL_ID);
     if (!channel?.isTextBased() || !channel.send) throw new Error("Der Meldekanal ist kein beschreibbarer Textkanal.");
-    const heading = body.voralarm ? "🟠 **VORALARM**" : body.probealarm ? "🧪 **PROBEALARM**" : "🚨 **NEUE ALARMIERUNG**";
+    const heading = body.voralarm ? "🟠 **VORALARM**" : body.probealarm ? "🧪 **PROBEALARM**" : "🚨 **ALARM**";
     await channel.send({
       content: heading + "\n" + announcement,
       allowedMentions: { parse: [] }
